@@ -16,6 +16,9 @@
 #define IDC_EDIT_JOBS           207
 #define IDC_EDIT_THREADS        208
 #define IDC_CHECK_SIMD          209
+#define IDC_RADIO_QUALITY_FAST  210
+#define IDC_RADIO_QUALITY_NORMAL 211
+#define IDC_RADIO_QUALITY_HIGH  212
 
 // File Management tab controls
 #define IDC_RADIO_OUT_SAME      301
@@ -30,6 +33,8 @@
 #define IDC_EDIT_RESIZE_H       310
 #define IDC_BTN_SAVE_PROFILE    311
 #define IDC_BTN_LOAD_PROFILE    312
+#define IDC_CHECK_PRESERVE_ORIGINAL 313
+#define IDC_CHECK_ENABLE_LOGGING    314
 
 // Status bar
 #define IDC_STATUSBAR           401

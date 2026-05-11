@@ -33,6 +33,10 @@
 #define TAB_H                24
 #define STATUSBAR_H          22
 
+// Adaptive Settling Time — 마지막 파일 수신 후 이 시간 동안 추가 유입 없으면 수집 완료
+#define SETTLE_TIMER_ID      1
+#define SETTLE_DELAY_MS      500
+
 static const wchar_t CLASS_NAME[]  = L"AVIFMasterWindowClass";
 static const wchar_t WINDOW_NAME[] = L"AVIF-Master";
 static const wchar_t MUTEX_NAME[]  = L"AVIFMasterGlobalMutex_v1";
@@ -230,7 +234,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
     // ── Collect command-line args ──
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    bool startWithFiles = (argc > 1);
     if (argv) {
         for (int i = 1; i < argc; ++i) AddFile(argv[i]);
         LocalFree(argv);
@@ -241,8 +244,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow) {
     ShowWindow(g_hMainWnd, nCmdShow);
     UpdateWindow(g_hMainWnd);
 
-    if (startWithFiles)
-        PostMessageW(g_hMainWnd, WM_COMMAND, MAKEWPARAM(IDC_START_BUTTON, BN_CLICKED), 0);
+    // Adaptive Settling: 파일이 있으면 타이머 시작 (슬레이브 파일 수집 대기)
+    if (argc > 1)
+        SetTimer(g_hMainWnd, SETTLE_TIMER_ID, SETTLE_DELAY_MS, NULL);
 
     MSG msg = {};
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
@@ -284,9 +288,10 @@ void LayoutWindows(HWND hwnd) {
         SetWindowPos(g_hBottomBar, NULL, 0, H - BOTTOM_BAR_H - STATUSBAR_H,
                      listW, BOTTOM_BAR_H, SWP_NOZORDER);
 
-    // Start button (inside bottom bar — reposition relative to bar)
+    // Start button (child of hwnd — absolute position in bottom bar area)
     if (g_hStartBtn)
-        SetWindowPos(g_hStartBtn, NULL, 8, 8, listW - 16, BOTTOM_BAR_H - 16, SWP_NOZORDER);
+        SetWindowPos(g_hStartBtn, NULL, 8, H - BOTTOM_BAR_H - STATUSBAR_H + 8,
+                     listW - 16, BOTTOM_BAR_H - 16, SWP_NOZORDER);
 
     // Progress bar
     if (g_hProgressBar)
@@ -711,15 +716,30 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         break;
     }
 
+    // ── Adaptive Settling Timer: 슬레이브 파일 수집 완료 후 자동 변환 시작 ──
+    case WM_TIMER: {
+        if (wParam == SETTLE_TIMER_ID) {
+            KillTimer(hwnd, SETTLE_TIMER_ID);
+            if (!g_converting) {
+                StartConversion();
+            }
+        }
+        return 0;
+    }
+
     // ── WM_COPYDATA: slave sends files ──
     case WM_COPYDATA: {
         COPYDATASTRUCT* cds = (COPYDATASTRUCT*)lParam;
         if (cds && cds->dwData == MY_COPYDATA_ID && cds->lpData) {
             AddFile((const wchar_t*)cds->lpData);
-            std::lock_guard<std::mutex> lk(g_itemsMutex);
-            ListView_SetItemCountEx(g_hListView, (int)g_items.size(),
-                                    LVSICF_NOINVALIDATEALL);
+            {
+                std::lock_guard<std::mutex> lk(g_itemsMutex);
+                ListView_SetItemCountEx(g_hListView, (int)g_items.size(),
+                                        LVSICF_NOINVALIDATEALL);
+            }
             InvalidateRect(g_hListView, NULL, FALSE);
+            // 파일 수신할 때마다 타이머 리셋 — 마지막 파일 후 SETTLE_DELAY_MS 대기
+            SetTimer(hwnd, SETTLE_TIMER_ID, SETTLE_DELAY_MS, NULL);
         }
         return TRUE;
     }
